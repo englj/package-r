@@ -1,12 +1,16 @@
 include common.mk
 include tools.mk
 
-LDFLAGS += -X "$(MODULE)/version.Version=$(VERSION)" -X "$(MODULE)/version.CommitSHA=$(VERSION_HASH)"
+LDFLAGS += -w -s \
+	-X "$(MODULE)/version.Version=$(VERSION)" \
+	-X "$(MODULE)/version.CommitSHA=$(VERSION_HASH)"
 
-## Build:
+# ------------------------------------------------------------------------------
+# Build Targets
+# ------------------------------------------------------------------------------
 
 .PHONY: build
-build: | build-frontend build-backend ## Build binary
+build: | build-frontend build-backend ## Build everything
 
 .PHONY: build-frontend
 build-frontend: ## Build frontend
@@ -14,7 +18,12 @@ build-frontend: ## Build frontend
 
 .PHONY: build-backend
 build-backend: ## Build backend
-	$Q $(go) build -ldflags '$(LDFLAGS)' -o filebrowser
+	$Q CGO_ENABLED=1 \
+	$(go) build -ldflags '$(LDFLAGS)' -o filebrowser
+
+# ------------------------------------------------------------------------------
+# Test Targets
+# ------------------------------------------------------------------------------
 
 .PHONY: test
 test: | test-frontend test-backend ## Run all tests
@@ -27,6 +36,10 @@ test-frontend: ## Run frontend tests
 test-backend: ## Run backend tests
 	$Q $(go) test -v ./...
 
+# ------------------------------------------------------------------------------
+# Lint Targets
+# ------------------------------------------------------------------------------
+
 .PHONY: lint
 lint: lint-frontend lint-backend ## Run all linters
 
@@ -38,22 +51,22 @@ lint-frontend: ## Run frontend linters
 lint-backend: | $(golangci-lint) ## Run backend linters
 	$Q $(golangci-lint) run -v
 
-.PHONY: lint-commits
-lint-commits: $(commitlint) ## Run commit linters
-	$Q ./scripts/commitlint.sh
-
-fmt: $(goimports) ## Format source files
+.PHONY: fmt
+fmt: $(goimports) ## Format Go source files
 	$Q $(goimports) -local $(MODULE) -w $$(find . -type f -name '*.go' -not -path "./vendor/*")
 
-clean: clean-tools ## Clean
+# ------------------------------------------------------------------------------
+# Clean Targets
+# ------------------------------------------------------------------------------
 
-## Release:
+.PHONY: clean
+clean: clean-tools ## Clean all build artifacts
 
-.PHONY: bump-version
-bump-version: $(standard-version) ## Bump app version
-	$Q ./scripts/bump_version.sh
+# ------------------------------------------------------------------------------
+# Help Target
+# ------------------------------------------------------------------------------
 
-## Help:
+.PHONY: help
 help: ## Show this help
 	@echo ''
 	@echo 'Usage:'

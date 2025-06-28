@@ -16,6 +16,13 @@ import (
 	"github.com/versioneer-tech/package-r/share"
 )
 
+type catalogedFile struct {
+	File          *files.FileInfo
+	CatalogURL    string
+	FilterField   string
+	AssetsBaseURL string
+}
+
 var withHashFile = func(fn handleFunc) handleFunc {
 	return func(w http.ResponseWriter, r *http.Request, d *data) (int, error) {
 		id, ifPath := ifPathWithName(r)
@@ -75,7 +82,13 @@ var withHashFile = func(fn handleFunc) handleFunc {
 			return errToStatus(err), err
 		}
 
-		d.raw = file
+		d.raw = &catalogedFile{
+			File:          file,
+			CatalogURL:    link.CatalogURL,
+			FilterField:   link.FiltersField,
+			AssetsBaseURL: link.AssetsBaseURL,
+		}
+
 		return fn(w, r, d)
 	}
 }
@@ -96,11 +109,12 @@ func ifPathWithName(r *http.Request) (id, filePath string) {
 }
 
 var publicShareHandler = withHashFile(func(w http.ResponseWriter, r *http.Request, d *data) (int, error) {
-	file := d.raw.(*files.FileInfo)
+	cf := d.raw.(*catalogedFile)
+	file := cf.File
 
 	if file.IsDir {
-		file.Listing.Sorting = files.Sorting{By: "name", Asc: false}
-		file.Listing.ApplySort()
+		file.Sorting = files.Sorting{By: "name", Asc: false}
+		file.ApplySort()
 		return renderJSON(w, r, file)
 	}
 
@@ -116,9 +130,9 @@ var publicShareHandler = withHashFile(func(w http.ResponseWriter, r *http.Reques
 		file.Content = ""
 	}
 
-	//nolint:goconst
-	if presign := r.URL.Query().Get("presign"); presign != "false" && presign != "0" && presign != "" {
-		url, err := files.Presign(file.RealPath(), *d.user.Envs)
+	presign, ok := r.URL.Query()["presign"]
+	if ok && !strings.EqualFold(presign[0], "false") {
+		url, err := files.Presign(file.RealPath(), r.Method, *d.user.Envs)
 		if errors.Is(err, fbErrors.ErrInvalidOption) {
 			return http.StatusBadRequest, nil
 		} else if err != nil {
@@ -130,16 +144,32 @@ var publicShareHandler = withHashFile(func(w http.ResponseWriter, r *http.Reques
 		file.Content = ""
 	}
 
-	if preview := r.URL.Query().Get("preview"); preview != "false" && preview != "0" && preview != "" {
-		err := file.Preview()
-		if errors.Is(err, fbErrors.ErrInvalidOption) {
-			return http.StatusBadRequest, nil
-		} else if err != nil {
-			return http.StatusInternalServerError, err
-		}
+	follow, ok := r.URL.Query()["followRedirect"]
+	if ok && !strings.EqualFold(follow[0], "false") && file.PresignedURL != "" {
+		status := http.StatusTemporaryRedirect // 307 to preserve method
+		http.Redirect(w, r, file.PresignedURL, status)
+		return status, nil
+	}
 
-		// do not waste bandwidth
-		file.Content = ""
+	if d.settings.Catalog.PreviewURL != "" {
+		preview, ok := r.URL.Query()["preview"]
+		if ok && !strings.EqualFold(preview[0], "false") {
+			err := file.Preview()
+			if errors.Is(err, fbErrors.ErrInvalidOption) {
+				return http.StatusBadRequest, nil
+			} else if err != nil {
+				return http.StatusInternalServerError, err
+			}
+
+			scheme := "https"
+			if strings.HasPrefix(r.Host, "localhost") {
+				scheme = "http"
+			}
+			file.PreviewURL = d.settings.Catalog.PreviewURL + scheme + "://" + r.Host + "/api/public/catalog/" + r.URL.Path // TBD consider configurable base path
+
+			// do not waste bandwidth
+			file.Content = ""
+		}
 	}
 
 	follow, ok := r.URL.Query()["followRedirect"]
@@ -156,7 +186,9 @@ var publicDlHandler = withHashFile(func(w http.ResponseWriter, r *http.Request, 
 		return http.StatusForbidden, nil
 	}
 
-	file := d.raw.(*files.FileInfo)
+	cf := d.raw.(*catalogedFile)
+	file := cf.File
+
 	if !file.IsDir {
 		return rawFileHandler(w, r, file)
 	}

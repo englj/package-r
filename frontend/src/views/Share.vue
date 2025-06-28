@@ -1,17 +1,17 @@
 <template>
   <div>
-    <header-bar showMenu showLogo>
-      <title />
+    <header-bar showLogo>
+      <title>{{ name }}</title>
 
       <action
-        v-if="fileStore.selectedCount && authStore.user?.perm.download"
+        v-if="fileStore.selectedCount && canDownload"
         icon="file_download"
         :label="t('buttons.download')"
         @action="download"
         :counter="fileStore.selectedCount"
       />
       <!-- <button
-        v-if="isSingleFile() && authStore.user?.perm.download"
+        v-if="isSingleFile() && canDownload"
         class="action copy-clipboard"
         :aria-label="t('buttons.copyDownloadLinkToClipboard')"
         :data-title="t('buttons.copyDownloadLinkToClipboard')"
@@ -20,7 +20,7 @@
         <i class="material-icons">content_paste</i>
       </button> -->
       <action
-        v-if="authStore.user?.perm.download"
+        v-if="canDownload"
         icon="check_circle"
         :label="t('buttons.selectMultiple')"
         @action="toggleMultipleSelection"
@@ -104,7 +104,7 @@
             <p v-if="!req.isDir" :title="modTime">
               <strong>{{ $t("prompts.lastModified") }}:</strong> {{ humanTime }}
             </p>
-            <p v-if="!req.isDir && authStore.user?.perm.download">
+            <p v-if="!req.isDir && canDownload">
               <strong>MD5: </strong>
               <code>
                 <a
@@ -115,7 +115,7 @@
                 >
               </code>
             </p>
-            <p v-if="!req.isDir && authStore.user?.perm.download">
+            <p v-if="!req.isDir && canDownload">
               <strong>SHA1: </strong>
               <code>
                 <a
@@ -126,7 +126,7 @@
                 >
               </code>
             </p>
-            <p v-if="!req.isDir && authStore.user?.perm.download">
+            <p v-if="!req.isDir && canDownload">
               <strong>SHA256: </strong>
               <code>
                 <a
@@ -137,7 +137,7 @@
                 >
               </code>
             </p>
-            <p v-if="!req.isDir && authStore.user?.perm.download">
+            <p v-if="!req.isDir && canDownload">
               <strong>SHA512: </strong>
               <code>
                 <a
@@ -148,7 +148,7 @@
                 >
               </code>
             </p>
-            <p v-if="!req.isDir && authStore.user?.presignEnabled">
+            <p v-if="!req.isDir && canPresign">
               <strong>Presigned URL: </strong>
               <code>
                 <a
@@ -161,7 +161,7 @@
                 </a>
               </code>
             </p>
-            <p v-if="!req.isDir && authStore.user?.previewEnabled">
+            <p v-if="!req.isDir && canPreview">
               <strong>Preview URL: </strong>
               <code>
                 <a
@@ -177,7 +177,7 @@
           </div>
           <div
             class="share__box__element share__box__center"
-            v-if="authStore.user?.perm.download"
+            v-if="canDownload"
           >
             <a
               target="_blank"
@@ -382,12 +382,12 @@ import Errors from "@/views/Errors.vue";
 import Item from "@/components/files/ListingItem.vue";
 import { useFileStore } from "@/stores/file";
 import { useLayoutStore } from "@/stores/layout";
-import { useAuthStore } from "@/stores/auth";
 import { computed, inject, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { StatusError } from "@/api/utils";
 //import { copy } from "@/utils/clipboard";
+import { name, catalogPreviewURL } from "@/utils/constants";
 
 const error = ref<StatusError | null>(null);
 const showLimit = ref<number>(100);
@@ -404,7 +404,6 @@ const $showError = inject<IToastError>("$showError")!;
 const { t } = useI18n({});
 
 const route = useRoute();
-const authStore = useAuthStore();
 const fileStore = useFileStore();
 const layoutStore = useLayoutStore();
 
@@ -477,6 +476,10 @@ const fetchData = async () => {
   fileStore.reload = false;
   fileStore.selected = [];
   fileStore.multiple = false;
+
+  presignedURL.value = null;
+  previewURL.value = null;
+
   layoutStore.closeHovers();
 
   // Set loading to true and reset the error.
@@ -597,6 +600,19 @@ onMounted(async () => {
   hash.value = route.params.path[0];
   window.addEventListener("keydown", keyEvent);
   await fetchData();
+
+  canDownload.value = false;
+
+  const lastDotIndex = hash.value.lastIndexOf(".");
+  if (lastDotIndex !== -1) {
+    const afterDot = hash.value.slice(lastDotIndex + 1);
+    if (afterDot.includes("d")) {
+      canDownload.value = true;
+    }
+  }
+
+  canPresign.value = true; // TBD
+  canPreview.value = catalogPreviewURL !== "";
 });
 
 onBeforeUnmount(() => {
@@ -606,6 +622,9 @@ onBeforeUnmount(() => {
 
 const presignedURL = ref<string | null>(null);
 const previewURL = ref<string | null>(null);
+const canDownload = ref<boolean>(false);
+const canPresign = ref<boolean>(false);
+const canPreview = ref<boolean>(false);
 
 const checksum = async (event: Event, algo: string) => {
   event.preventDefault();

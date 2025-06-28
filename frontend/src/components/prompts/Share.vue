@@ -7,32 +7,37 @@
     <template v-if="listing">
       <div class="card-content">
         <table>
-          <tr>
-            <th>#</th>
-            <th>{{ $t("settings.shareDuration") }}</th>
-            <th></th>
-            <th></th>
-          </tr>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>{{ $t("settings.shareDuration") }}</th>
+              <th>{{ $t("settings.shareDescription") }}</th>
+              <th></th>
+              <th></th>
+            </tr>
+          </thead>
 
-          <tr v-for="link in links" :key="link.hash">
-            <td>{{ link.hash }}</td>
-            <td>
-              <template v-if="link.expire !== 0">{{
-                humanTime(link.expire)
-              }}</template>
-              <template v-else>{{ $t("permanent") }}</template>
-            </td>
-            <td class="small">
-              <button
-                class="action copy-clipboard"
-                :aria-label="$t('buttons.copyToClipboard')"
-                :title="$t('buttons.copyToClipboard')"
-                @click="copyToClipboard(buildLink(link))"
-              >
-                <i class="material-icons">content_paste</i>
-              </button>
-            </td>
-            <!-- <td class="small" v-if="hasDownloadLink()">
+          <tbody>
+            <tr v-for="link in links" :key="link.hash">
+              <td>{{ link.hash }}</td>
+              <td>
+                <template v-if="link.expire !== 0">{{
+                  humanTime(link.expire)
+                }}</template>
+                <template v-else>{{ $t("permanent") }}</template>
+              </td>
+              <td>{{ link.description }}</td>
+              <td class="small">
+                <button
+                  class="action copy-clipboard"
+                  :aria-label="$t('buttons.copyToClipboard')"
+                  :title="$t('buttons.copyToClipboard')"
+                  @click="copyToClipboard(buildLink(link))"
+                >
+                  <i class="material-icons">content_paste</i>
+                </button>
+              </td>
+              <!-- <td class="small" v-if="hasDownloadLink()">
               <button
                 class="action copy-clipboard"
                 :aria-label="$t('buttons.copyDownloadLinkToClipboard')"
@@ -42,17 +47,18 @@
                 <i class="material-icons">content_paste_go</i>
               </button>
             </td> -->
-            <td class="small">
-              <button
-                class="action"
-                @click="deleteLink($event, link)"
-                :aria-label="$t('buttons.delete')"
-                :title="$t('buttons.delete')"
-              >
-                <i class="material-icons">delete</i>
-              </button>
-            </td>
-          </tr>
+              <td class="small">
+                <button
+                  class="action"
+                  @click="deleteLink($event, link)"
+                  :aria-label="$t('buttons.delete')"
+                  :title="$t('buttons.delete')"
+                >
+                  <i class="material-icons">delete</i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
         </table>
       </div>
 
@@ -112,6 +118,34 @@
           v-model.trim="password"
           tabindex="3"
         />
+        <p>{{ $t("settings.shareDescription") }}</p>
+        <input
+          class="input input--block"
+          v-model.trim="description"
+          tabindex="4"
+        />
+        <p>{{ $t("settings.hash") }}</p>
+        <input class="input input--block" v-model.trim="hash" tabindex="5" />
+        <div v-if="catalogBaseURL != ''">
+          <p>{{ $t("settings.catalogName") }}</p>
+          <input
+            class="input input--block"
+            v-model.trim="catalogName"
+            tabindex="6"
+          />
+          <p>{{ $t("settings.filterField") }}</p>
+          <input
+            class="input input--block"
+            v-model.trim="filterField"
+            tabindex="7"
+          />
+          <p>{{ $t("settings.assetsBaseURL") }}</p>
+          <input
+            class="input input--block"
+            v-model.trim="assetsBaseURL"
+            tabindex="8"
+          />
+        </div>
       </div>
 
       <div class="card-action">
@@ -120,7 +154,7 @@
           @click="() => switchListing()"
           :aria-label="$t('buttons.cancel')"
           :title="$t('buttons.cancel')"
-          tabindex="5"
+          tabindex="6"
         >
           {{ $t("buttons.cancel") }}
         </button>
@@ -130,7 +164,7 @@
           @click="submit"
           :aria-label="$t('buttons.share')"
           :title="$t('buttons.share')"
-          tabindex="4"
+          tabindex="7"
         >
           {{ $t("buttons.share") }}
         </button>
@@ -142,10 +176,30 @@
 <script>
 import { mapActions, mapState } from "pinia";
 import { useFileStore } from "@/stores/file";
+import { useAuthStore } from "@/stores/auth";
 import { share as share_api, pub as pub_api } from "@/api";
 import dayjs from "dayjs";
 import { useLayoutStore } from "@/stores/layout";
 import { copy } from "@/utils/clipboard";
+import {
+  shareLinkDefaultHash,
+  catalogBaseURL,
+  catalogDefaultName,
+} from "@/utils/constants";
+
+function defaultHash(length = 8) {
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0, O, l, 1, I
+  let random = "";
+  for (let i = 0; i < length; i++) {
+    random += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  if (shareLinkDefaultHash.includes("<random>")) {
+    return shareLinkDefaultHash.replace("<random>", random);
+  } else {
+    return shareLinkDefaultHash + random;
+  }
+}
 
 export default {
   name: "share",
@@ -156,11 +210,18 @@ export default {
       links: [],
       clip: null,
       password: "",
+      description: "",
+      hash: defaultHash(),
+      catalogBaseURL: catalogBaseURL,
+      catalogName: catalogDefaultName,
+      filterField: "",
+      assetsBaseURL: "",
       listing: true,
     };
   },
   inject: ["$showError", "$showSuccess"],
   computed: {
+    ...mapState(useAuthStore, ["user"]),
     ...mapState(useFileStore, [
       "req",
       "selected",
@@ -218,14 +279,48 @@ export default {
     },
     submit: async function () {
       try {
+        const hashPattern = /^[a-z0-9\-]+$/;
+        if (this.hash !== "" && !hashPattern.test(this.hash)) {
+          this.$showError(
+            "Invalid hash - only lowercase letters, numbers and hyphens are allowed!"
+          );
+          return;
+        }
+
+        const catalogNamePattern = /^[a-z0-9.\-]+$/;
+        if (
+          this.catalogBaseURL != "" &&
+          this.catalogName !== "" &&
+          !catalogNamePattern.test(this.catalogName)
+        ) {
+          this.$showError(
+            "Invalid catalog name - only lowercase letters, numbers, dots and hyphens are allowed!"
+          );
+          return;
+        }
+
         let res = null;
 
         if (!this.time) {
-          res = await share_api.create(this.url, this.password);
+          res = await share_api.create(
+            this.url,
+            this.password,
+            this.description,
+            this.hash,
+            this.catalogName,
+            this.filterField,
+            this.assetsBaseURL
+          );
         } else {
           res = await share_api.create(
             this.url,
             this.password,
+            this.description,
+            this.hash,
+            this.catalogName,
+            this.catalogName,
+            this.filterField,
+            this.assetsBaseURL,
             this.time,
             this.unit
           );
@@ -237,6 +332,11 @@ export default {
         this.time = 0;
         this.unit = "hours";
         this.password = "";
+        this.description = "";
+        this.hash = defaultHash();
+        this.catalogName = catalogDefaultName;
+        this.filterField = "";
+        this.assetsBaseURL = "";
 
         this.listing = true;
       } catch (e) {

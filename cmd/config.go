@@ -49,9 +49,13 @@ func addConfigFlags(flags *pflag.FlagSet) {
 	flags.String("branding.files", "", "path to directory with images and custom styles")
 	flags.Bool("branding.disableExternal", false, "disable external links such as GitHub links")
 	flags.Bool("branding.disableUsedPercentage", false, "disable used disk percentage graph")
+
+	flags.String("sharelink.defaultHash", "", "(optional) hash of share link, supports templating via <random>")
+	flags.String("catalog.baseurl", "", "(optional) base url of catalog")
+	flags.String("catalog.defaultName", "", "(optional) default catalog name")
+	flags.String("catalog.previewURL", "", "(optional) preview URL")
 }
 
-//nolint:gocyclo
 func getAuthentication(flags *pflag.FlagSet, defaults ...interface{}) (settings.AuthMethod, auth.Auther) {
 	method := settings.AuthMethod(mustGetString(flags, "auth.method"))
 
@@ -188,5 +192,5 @@ func printSettings(ser *settings.Server, set *settings.Settings, auther auth.Aut
 
 	b, err := json.MarshalIndent(auther, "", "  ")
 	checkErr(err)
-	fmt.Printf("\nAuther configuration (raw):\n\n%s\n\n", string(b))
+	fmt.Printf("\nAuthor configuration (raw):\n\n%s\n\n", string(b))
 }

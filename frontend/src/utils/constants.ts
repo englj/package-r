@@ -18,6 +18,10 @@ const enableExec: boolean = window.FileBrowser.EnableExec;
 const tusSettings = window.FileBrowser.TusSettings;
 const origin = window.location.origin;
 const tusEndpoint = `/api/tus`;
+const shareLinkDefaultHash = window.FileBrowser.ShareLinkDefaultHash;
+const catalogBaseURL = window.FileBrowser.CatalogBaseURL;
+const catalogDefaultName = window.FileBrowser.CatalogDefaultName;
+const catalogPreviewURL = window.FileBrowser.CatalogPreviewURL;
 
 export {
   name,
@@ -39,4 +43,8 @@ export {
   tusSettings,
   origin,
   tusEndpoint,
+  shareLinkDefaultHash,
+  catalogBaseURL,
+  catalogDefaultName,
+  catalogPreviewURL,
 };

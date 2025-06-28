@@ -35,8 +35,8 @@ var resourceGetHandler = withUser(func(w http.ResponseWriter, r *http.Request, d
 	}
 
 	if file.IsDir {
-		file.Listing.Sorting = d.user.Sorting
-		file.Listing.ApplySort()
+		file.Sorting = d.user.Sorting
+		file.ApplySort()
 		return renderJSON(w, r, file)
 	}
 
@@ -52,8 +52,9 @@ var resourceGetHandler = withUser(func(w http.ResponseWriter, r *http.Request, d
 		file.Content = ""
 	}
 
-	if presign := r.URL.Query().Get("presign"); presign != "false" && presign != "0" && presign != "" {
-		url, err := files.Presign(file.Path, *d.user.Envs)
+	presign, ok := r.URL.Query()["presign"]
+	if ok && !strings.EqualFold(presign[0], "false") {
+		url, err := files.Presign(file.Path, r.Method, *d.user.Envs)
 		if errors.Is(err, fbErrors.ErrInvalidOption) {
 			return http.StatusBadRequest, nil
 		} else if err != nil {
@@ -65,16 +66,11 @@ var resourceGetHandler = withUser(func(w http.ResponseWriter, r *http.Request, d
 		file.Content = ""
 	}
 
-	if preview := r.URL.Query().Get("preview"); preview != "false" && preview != "0" && preview != "" {
-		err := file.Preview()
-		if errors.Is(err, fbErrors.ErrInvalidOption) {
-			return http.StatusBadRequest, nil
-		} else if err != nil {
-			return http.StatusInternalServerError, err
-		}
-
-		// do not waste bandwidth
-		file.Content = ""
+	follow, ok := r.URL.Query()["followRedirect"]
+	if ok && !strings.EqualFold(follow[0], "false") && file.PresignedURL != "" {
+		status := http.StatusTemporaryRedirect // 307 to preserve method
+		http.Redirect(w, r, file.PresignedURL, status)
+		return status, nil
 	}
 
 	follow, ok := r.URL.Query()["followRedirect"]
